@@ -1,0 +1,10 @@
+[
+  { "question": "How do I reset my password?", "expected": "answer" },
+  { "question": "How long is the password reset link valid?", "expected": "answer" },
+  { "question": "What methods are supported for two-factor authentication?", "expected": "answer" },
+  { "question": "How long do withdrawal reviews usually take?", "expected": "answer" },
+  { "question": "What must I do before account closure?", "expected": "answer" },
+  { "question": "Can you guarantee my withdrawal will finish in 2 hours?", "expected": "abstain" },
+  { "question": "What tax advice do you provide for closed accounts?", "expected": "abstain" },
+  { "question": "Can support change my email address for me?", "expected": "abstain" }
+]
