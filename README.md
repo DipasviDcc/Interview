@@ -4,7 +4,27 @@ A small Spring Boot + Vue support service that reads `kb.json`, retrieves eviden
 
 The Vue application includes a question form, answer and abstention states, expandable citations, retrieval details, a searchable **read-only knowledge-base viewer**, and a link to **Swagger UI**.
 
-## Requirements
+## 1. Source code
+
+The backend source is in [src/main/java/org/example](src/main/java/org/example), and the Vue frontend is in [frontend/src](frontend/src). The repository layout is:
+
+```text
+kb.json                         External runtime input
+src/main/java/org/example/
+  config/                       Settings, SDK client, index and OpenAPI wiring
+  controller/                   /ask, /api/kb, /api/status, input errors
+  model/                        Public JSON records and internal evidence
+  retrieval/                    Token normalization and immutable TF-IDF index
+  service/                      File loader, passage selection, support gate, orchestration
+  answering/                    Extractive/OpenAI composers and final validation
+src/test/                       API, replacement-input, grounding and SDK tests
+frontend/                       Vue + TypeScript interface
+evaluation/                     Eight-case HTTP validation script
+```
+
+## 2. Setup instructions
+
+### Prerequisites
 
 - JDK 17 or later (tested with Java 17).
 - Node.js 22.12 or later and npm for the Vue frontend and HTTP evaluation script.
@@ -13,7 +33,71 @@ The Vue application includes a question form, answer and abstention states, expa
 
 Pinned dependencies: Spring Boot 3.5.16, OpenAI Java 4.78.1, springdoc 2.8.17, Vue 3.5.43, Vite 8.3.4. Frontend transitive versions are recorded in `frontend/package-lock.json`.
 
-## Run from a clean checkout
+### Install frontend dependencies
+
+Clone this repository and open its root directory, which contains `pom.xml` and `kb.json`. Run backend commands from that root directory. The Maven Wrapper downloads Maven and backend dependencies on the first build.
+
+Install the frontend dependencies once, before starting Vite:
+
+```sh
+cd frontend
+npm ci
+cd ..
+```
+
+If you are already in `frontend/`, run `npm ci` there and then return to the repository root for backend commands. On Windows, stop any running Vite dev/preview server with Ctrl+C before reinstalling dependencies; otherwise its native Rolldown module can cause `EPERM unlink`.
+
+### Choose the answering mode
+
+Set these variables in the same terminal that will run the backend. Environment changes take effect when the backend restarts.
+
+**Offline mode — no API key required:**
+
+PowerShell:
+
+```powershell
+$env:ANSWER_MODE = "extractive"
+```
+
+macOS / Linux:
+
+```sh
+export ANSWER_MODE=extractive
+```
+
+**OpenAI mode — set your API key:**
+
+Replace `your-api-key` below with your own key, then start the backend using section 3. Keep the key in the backend environment; do not put it in Vue source code or commit it to Git.
+
+**PowerShell:**
+
+```powershell
+$env:ANSWER_MODE = "openai"
+$env:OPENAI_API_KEY = "your-api-key"
+$env:OPENAI_MODEL = "gpt-4.1-mini"
+
+```
+
+**macOS / Linux:**
+
+```sh
+export ANSWER_MODE=openai
+export OPENAI_API_KEY=your-api-key
+export OPENAI_MODEL=gpt-4.1-mini
+
+```
+
+Use a model available to your API account that supports Responses and Structured Outputs. The model name is configurable. `.env.example` documents the settings; `.env` files are **not automatically loaded** by Java or these commands.
+
+OpenAI receives only the current question and approved retrieved excerpts. Requests use `store=false`, a 20-second per-request timeout, at most one SDK retry, and a 1,200-token output limit. There is no conversation memory or web search.
+
+To make citation grounding directly checkable, **both modes return verbatim excerpts**. In OpenAI mode the model selects complete approved excerpts into a structured claim list. It does not freely paraphrase the facts. The backend rejects altered quotations, missing subquestions, duplicate claims, and unknown document IDs. This deliberately trades conversational wording for verifiable evidence.
+
+If the key is missing or the provider fails, the service uses the checked extractive composer. A model refusal or a well-formed but invalid claim list causes abstention. Parsing failures and incomplete provider responses use the same validated offline fallback as provider errors. Logs record the exception type without logging API keys, question text, or provider response bodies. `/api/status` reports configuration availability, not a live credential validity check.
+
+Official references: [Java SDK](https://developers.openai.com/api/reference/java), [Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs), [configured default model](https://developers.openai.com/api/docs/models/gpt-4.1-mini).
+
+## 3. Run command
 
 Run backend commands from the repository root, where `kb.json` lives.
 
@@ -27,7 +111,6 @@ Run backend commands from the repository root, where `kb.json` lives.
 
 ```powershell
 cd frontend
-npm ci
 npm run dev
 ```
 
@@ -41,7 +124,6 @@ sh ./mvnw spring-boot:run
 
 ```sh
 cd frontend
-npm ci
 npm run dev
 ```
 
@@ -57,75 +139,63 @@ Vite proxies API requests to the backend, so no CORS setup is needed. The API ke
 
 On Windows, stop a server launched with `java -jar` before rebuilding that JAR; the running process holds a file lock. Development with `spring-boot:run` avoids locking the packaged JAR.
 
-## Validate
+Stop the Vite dev/preview server before running `npm ci` again on Windows. Vite holds the native Rolldown module open, which can cause `EPERM unlink` during dependency installation. Use Ctrl+C in the terminal running Vite, then retry `npm ci`.
 
-The backend command loads the repository `kb.json`, tests answer/abstain behavior, validates citations and the JSON contract, tests replacement KB files, and packages a runnable JAR. API behavior tests use a separate sample fixture so a valid replacement KB does not invalidate their expected sample answers.
+## 4. Validation command
+
+Run automated backend validation from the repository root. The backend server does not need to be running, and these tests do not require an OpenAI key.
+
+**Windows / PowerShell:**
 
 ```powershell
-# Repository root; Windows
 .\mvnw.cmd verify
-
-# Repository root; macOS/Linux equivalent
-sh ./mvnw verify
-```
-
-Validate TypeScript and build the Vue application:
-
-```sh
-cd frontend
-npm ci
-npm run build
-```
-
-With the backend running, run the eight-case HTTP evaluation from the repository root:
-
-```sh
-node evaluation/evaluate.mjs
-```
-
-The evaluation reports decision accuracy, citation presence for answered questions, citation/source matching, JSON contract validity, and the number of unsupported questions incorrectly answered. It exits nonzero on a failure. Citation matching checks exact source text; the metric does not independently measure semantic relevance.
-
-For a different server or replacement KB, supply your own cases with `question` and `expected` (`answer` or `abstain`):
-
-```sh
-node evaluation/evaluate.mjs http://127.0.0.1:8080 path/to/cases.json
-```
-
-The bundled eight cases target the supplied sample KB. Replace their expected questions when evaluating unrelated KB content. The evaluator always fetches the currently loaded KB to verify citation membership and snippets.
-
-The OpenAI integration test uses a local HTTP stub and the **real official SDK**, checking the Responses API payload, strict structured format, and rejection of fabricated citations. Automated validation makes no paid API calls.
-
-## Enable OpenAI
-
-**PowerShell:**
-
-```powershell
-$env:ANSWER_MODE = "openai"
-$env:OPENAI_API_KEY = "your-api-key"
-$env:OPENAI_MODEL = "gpt-4.1-mini"
-.\mvnw.cmd spring-boot:run
 ```
 
 **macOS / Linux:**
 
 ```sh
-export ANSWER_MODE=openai
-export OPENAI_API_KEY=your-api-key
-export OPENAI_MODEL=gpt-4.1-mini
-sh ./mvnw spring-boot:run
+sh ./mvnw verify
 ```
 
-Use a model available to your API account that supports Responses and Structured Outputs. The model name is configurable. `.env.example` documents the settings; `.env` files are **not automatically loaded** by Java or these commands.
+Expected result: all tests pass with zero failures/errors, and Maven creates `target/support-answer-1.0.0.jar`. Validation loads the repository `kb.json`, checks the required JSON keys, tests cited answers and unsupported-question abstention, and verifies replacement KB files. Sample-specific tests use their own fixture so a valid replacement KB does not break those expectations.
 
-OpenAI receives only the current question and approved retrieved excerpts. Requests use `store=false`, a 20-second per-request timeout, at most one SDK retry, and a 1,200-token output limit. There is no conversation memory or web search.
+**Frontend type checking and production build:**
 
-To make citation grounding directly checkable, **both modes return verbatim excerpts**. In OpenAI mode the model selects complete approved excerpts into a structured claim list. It does not freely paraphrase the facts. The backend rejects altered quotations, missing subquestions, duplicate claims, and unknown document IDs. This deliberately trades conversational wording for verifiable evidence.
+Run from `frontend/` after the setup step has installed dependencies:
 
-If the key is missing or the provider fails, the service uses the checked extractive composer. A model refusal or a well-formed but invalid claim list causes abstention. Parsing failures and incomplete provider responses use the same validated offline fallback as provider errors. Logs record the exception type without logging API keys, question text, or provider response bodies. `/api/status` reports configuration availability, not a live credential validity check.
+```sh
+npm run build
+```
 
-Official references: [Java SDK](https://developers.openai.com/api/reference/java), [Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs), [configured default model](https://developers.openai.com/api/docs/models/gpt-4.1-mini).
+Expected result: TypeScript checking passes and Vite creates `frontend/dist/`.
 
-## Replace the knowledge base
+**Live HTTP evaluation:**
+
+Start the backend as described in section 3, keep it running, then run this from a separate terminal at the repository root:
+
+```sh
+node evaluation/evaluate.mjs
+```
+
+For the bundled sample KB, expect all eight decisions to match, a citation on every answered question, valid source snippets and JSON fields, and zero unsupported questions answered. The script exits nonzero if a check fails. See section 6 for test details, custom evaluation cases, and manual testing.
+
+## 5. Sample kb.json
+
+The repository includes the runtime sample file [kb.json](kb.json), containing six FAQ articles about password reset, two-factor authentication, withdrawal review, account closure, address changes, and unsupported request types.
+
+Each entry uses this schema. For example:
+
+```json
+[
+  {
+    "id": "doc_1",
+    "title": "Password reset",
+    "text": "Users can reset their password from the login page by clicking 'Forgot password'. A reset link is sent to the registered email address. The link expires in 30 minutes. Support agents cannot manually view or send existing passwords."
+  }
+]
+```
+
+### Use a replacement KB
 
 Replace the root `kb.json` or set `KB_PATH`, then restart the backend:
 
@@ -149,6 +219,117 @@ Schema:
 IDs must be unique; all three fields must be nonblank strings. The loader fails clearly on missing/malformed files or invalid records. An empty array is valid and causes questions to abstain. The index is rebuilt from disk on each start; no answers or embeddings are precomputed. The files under `src/main/samplefile/` are original reference material and are not the runtime input.
 
 The KB viewer shows the loaded snapshot. It cannot edit/upload articles. Restart the backend and refresh the UI to see a changed file.
+
+## 6. Tests and evaluation scripts
+
+### Automated test files
+
+Tests live in `src/test/java/org/example/`:
+
+| File | What it checks |
+|---|---|
+| `AnswerServiceTest.java` | Supported and unsupported questions, exact evidence, negation, timing caveats, role/action and time-unit mismatches, multi-part questions, invalid model claims, provider failure, conflicts, and KB instructions |
+| `KnowledgeBaseLoaderTest.java` | Reading the real input file, replacement/reloaded KB content, malformed/missing files, duplicate IDs, and an empty KB |
+| `SupportApiTest.java` | Required response keys, HTTP status codes, invalid inputs, read-only KB access, and Swagger/OpenAPI endpoints |
+| `OpenAiAnswerGeneratorTest.java` | The official SDK's structured Responses request against a local HTTP stub, invalid citations, and missing-key fallback |
+| `OpenAiFallbackContextTest.java` | Starting Spring Boot in OpenAI mode without a key and retaining the offline retrieval/abstention flow |
+
+Run every test with the validation command in section 4. To run a single test class, for example:
+
+**PowerShell, repository root:**
+
+```powershell
+.\mvnw.cmd "-Dtest=AnswerServiceTest" test
+```
+
+**macOS / Linux, repository root:**
+
+```sh
+sh ./mvnw -Dtest=AnswerServiceTest test
+```
+
+Test reports are generated in `target/surefire-reports/`. The OpenAI tests use a local HTTP stub and the real official SDK; automated tests do not make paid API calls.
+
+### Evaluation script
+
+- [evaluation/questions.json](evaluation/questions.json): eight questions with expected `answer` or `abstain` decisions for the sample KB.
+- [evaluation/evaluate.mjs](evaluation/evaluate.mjs): sends questions to the running backend and validates decisions, citations, and JSON structure.
+
+```sh
+node evaluation/evaluate.mjs
+```
+
+The JSON report includes `decisionAccuracy`, `answeredCitationPresenceRate`, `citationSourceMatchRate`, `jsonContractRate`, and `unsupportedAnsweredCount`. Citation/source matching checks exact original text; it is not an independent measure of semantic relevance.
+
+For a different backend address or replacement KB, create a cases file such as:
+
+```json
+[
+  { "question": "A question supported by your replacement KB", "expected": "answer" },
+  { "question": "A question absent from your replacement KB", "expected": "abstain" }
+]
+```
+
+Run it from the repository root:
+
+```sh
+node evaluation/evaluate.mjs http://127.0.0.1:8080 path/to/cases.json
+```
+
+The bundled eight questions target the sample KB. Use matching custom cases for unrelated replacement content. The script fetches the currently loaded KB to verify citation IDs, titles, and exact snippets.
+
+### Manual API testing
+
+Keep the backend running. With the bundled `kb.json`, use these checks:
+
+| Question | Expected result |
+|---|---|
+| `How do I reset my password?` | `decision: answer`, at least one citation to the password-reset article |
+| `How long is the password reset link valid?` | `decision: answer`, source text stating 30 minutes |
+| `Can you guarantee my withdrawal will finish in 2 hours?` | `decision: abstain`, empty citations, a human-support fallback |
+| `Can support change my email address for me?` | `decision: abstain`, empty citations |
+
+**PowerShell — answerable question:**
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8080/ask -ContentType application/json -Body '{"question":"How do I reset my password?"}' | ConvertTo-Json -Depth 6
+```
+
+**PowerShell — unsupported question:**
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8080/ask -ContentType application/json -Body '{"question":"Can support change my email address for me?"}' | ConvertTo-Json -Depth 6
+```
+
+**macOS / Linux — answerable question:**
+
+```sh
+curl -s http://127.0.0.1:8080/ask -H 'Content-Type: application/json' \
+  -d '{"question":"How do I reset my password?"}'
+```
+
+**macOS / Linux — unsupported question:**
+
+```sh
+curl -s http://127.0.0.1:8080/ask -H 'Content-Type: application/json' \
+  -d '{"question":"Can support change my email address for me?"}'
+```
+
+For every answered question, check that each cited snippet appears in the corresponding loaded KB article and supports the answer. For abstentions, check for an empty citation list and a clear suggestion to contact human support.
+
+### Manual frontend and Swagger testing
+
+1. Start the backend and frontend using section 3, then open <http://127.0.0.1:5173>.
+2. Submit an answerable question from the table above. Confirm the answer, supported status, source title, and expandable citation snippet.
+3. Submit an unsupported question. Confirm the insufficient-information state and human-support message.
+4. Open **Knowledge base**, search for `withdrawal`, inspect the original text, and use **Ask about this topic** to prefill a question.
+5. Open **API reference**, or visit <http://127.0.0.1:8080/swagger-ui/index.html>. Expand `POST /ask`, choose **Try it out**, supply a question, and execute it. Check the returned JSON.
+
+### Optional live OpenAI smoke test
+
+Stop the backend, set `ANSWER_MODE`, `OPENAI_API_KEY`, and `OPENAI_MODEL` using section 2, and restart it using section 3. Repeat the answerable and unsupported API/UI checks above.
+
+Inspect <http://127.0.0.1:8080/api/status> for `answerMode: "openai"` and `openaiAvailable: true`. These fields confirm configuration only; they do not prove the key is valid or that a provider call succeeded. Watch backend logs for an `Answer provider unavailable` warning, which means the checked offline fallback was used. Unsupported questions should abstain before calling the provider. A real API smoke test can incur usage charges; all automated tests remain local.
 
 ## API contract
 
@@ -245,19 +426,3 @@ java -jar target/support-answer-1.0.0.jar
 ```
 
 `npm run build` generates `frontend/dist/`. For local verification of that build, run `npm run preview` from `frontend/` while the backend is running; Vite previews it at <http://127.0.0.1:4173>. The JAR serves the API and Swagger; the Vue build is a separate artifact. Generated dependency caches, `target/`, and `frontend/dist/` are ignored and reproducible with the commands above.
-
-## Source map
-
-```text
-kb.json                         External runtime input
-src/main/java/org/example/
-  config/                       Settings, SDK client, index and OpenAPI wiring
-  controller/                   /ask, /api/kb, /api/status, input errors
-  model/                        Public JSON records and internal evidence
-  retrieval/                    Token normalization and immutable TF-IDF index
-  service/                      File loader, passage selection, support gate, orchestration
-  answering/                    Extractive/OpenAI composers and final validation
-src/test/                       API, replacement-input, grounding and SDK tests
-frontend/                       Vue + TypeScript interface
-evaluation/                     Eight-case HTTP validation script
-```
