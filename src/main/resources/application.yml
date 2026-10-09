@@ -1,0 +1,27 @@
+server:
+  address: ${SERVER_ADDRESS:127.0.0.1}
+  port: ${PORT:8080}
+  error:
+    include-message: never
+    include-stacktrace: never
+spring:
+  application:
+    name: evidence-support
+  jackson:
+    deserialization:
+      fail-on-trailing-tokens: true
+support:
+  kb-path: ${KB_PATH:./kb.json}
+  mode: ${ANSWER_MODE:extractive}
+  top-k: ${RETRIEVAL_TOP_K:3}
+  min-similarity: ${MIN_SIMILARITY:0.12}
+  min-coverage: ${MIN_COVERAGE:0.85}
+  max-passage-chars: 1200
+  openai:
+    model: ${OPENAI_MODEL:gpt-4.1-mini}
+    timeout-seconds: 20
+    max-retries: 1
+    max-output-tokens: 1200
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html

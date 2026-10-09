@@ -1,0 +1,16 @@
+{
+  "question": "string",
+  "decision": "answer | abstain",
+  "answer": "string",
+  "citations": [
+    {
+      "id": "string",
+      "title": "string",
+      "snippet": "string"
+    }
+  ],
+  "debug": {
+    "retrieved_ids": ["string"],
+    "support_score": 0.0
+  }
+}
