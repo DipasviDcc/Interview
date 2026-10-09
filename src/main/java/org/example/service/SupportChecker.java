@@ -11,9 +11,11 @@ import java.util.regex.Pattern;
 public final class SupportChecker {
     public record Result(boolean supported, double score, List<Evidence> evidence, String reason) {}
     private static final Pattern NUMBER = Pattern.compile("(?<![\\p{L}\\p{N}])\\d+(?:\\.\\d+)?(?![\\p{L}\\p{N}])");
+    private static final Pattern QUANTITY = Pattern.compile("(?i)\\b(\\d+(?:\\.\\d+)?)\\s*(seconds?|minutes?|hours?|days?|weeks?|months?|years?)\\b");
+    private static final Pattern ACTOR = Pattern.compile("(?i)\\b(?:can|could|does|do|will|may|must|should)\\s+(?:the\\s+)?(support(?:\\s+agents?)?|users?|customers?|admins?|administrators?|staff|agents?)\\b");
     private static final Pattern TIME_QUESTION = Pattern.compile("(?i)\\b(?:how long|when|expire\\w*|expiry|expiration|valid|processing time|duration)\\b");
     private static final Pattern TIME_FACT = Pattern.compile("(?i)\\b\\d+\\s*(?:second|minute|hour|day|week|month|year)s?\\b|\\b(?:immediately|instantly|until|indefinitely)\\b");
-    private static final Pattern GUARANTEE = Pattern.compile("(?i)\\b(?:guarantee\\w*|promise\\w*|definitely|certainly)\\b");
+    private static final Pattern GUARANTEE = Pattern.compile("(?i)\\b(?:guarantee\\w*|promise\\w*|definitely|certainly|always)\\b");
     private static final Pattern UNCERTAIN = Pattern.compile("(?i)\\b(?:not|no|cannot|can't|never|usually|may|might|can take longer|typically)\\b");
     private static final Pattern NEGATIVE = Pattern.compile("(?i)\\b(?:not|no|cannot|can't|never)\\b");
     private final TextAnalyzer analyzer;
@@ -65,10 +67,33 @@ public final class SupportChecker {
 
     private boolean requestedFactsPresent(String question, String evidence) {
         if (!numbers(evidence).containsAll(numbers(question))) return false;
+        if (!quantities(evidence).containsAll(quantities(question))) return false;
+        if (!actorMatchesAction(question, evidence)) return false;
         if (TIME_QUESTION.matcher(question).find() && !TIME_FACT.matcher(evidence).find()) return false;
         if (GUARANTEE.matcher(question).find()
                 && (!GUARANTEE.matcher(evidence).find() || UNCERTAIN.matcher(evidence).find())) return false;
         return true;
+    }
+
+    private boolean actorMatchesAction(String question, String evidence) {
+        var matcher = ACTOR.matcher(question);
+        if (!matcher.find()) return true;
+        var actor = analyzer.terms(matcher.group(1));
+        var action = analyzer.terms(question);
+        action.removeAll(actor);
+        if (action.isEmpty()) return false;
+        for (String sentence : evidence.split("(?<=[.!?])\\s+")) {
+            var terms = analyzer.terms(sentence);
+            if (terms.containsAll(actor) && retriever.coverage(action, terms) >= properties.minCoverage()) return true;
+        }
+        return false;
+    }
+
+    private Set<String> quantities(String text) {
+        var values = new HashSet<String>();
+        var matcher = QUANTITY.matcher(text);
+        while (matcher.find()) values.add(matcher.group(1) + ":" + matcher.group(2).toLowerCase(Locale.ROOT).replaceAll("s$", ""));
+        return values;
     }
 
     private boolean conflicting(List<Evidence> candidates) {

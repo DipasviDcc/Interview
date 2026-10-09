@@ -37,7 +37,7 @@ class SupportApiTest {
     }
 
     @Test void badInputReturns400() throws Exception {
-        for (String body : new String[]{"{}", "{\"question\":\"   \"}", "{\"question\":null}", "not json",
+        for (String body : new String[]{"{}", "{\"question\":\"   \"}", "{\"question\":null}", "not json", "{\"question\":123}", "{\"question\":true}",
                 "{\"question\":\"" + "x".repeat(1001) + "\"}"}) {
             mvc.perform(post("/ask").contentType(MediaType.APPLICATION_JSON).content(body))
                     .andExpect(status().isBadRequest()).andExpect(jsonPath("$.error").isString());

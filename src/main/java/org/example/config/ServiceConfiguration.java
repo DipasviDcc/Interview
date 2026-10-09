@@ -1,6 +1,9 @@
 package org.example.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.cfg.CoercionAction;
+import com.fasterxml.jackson.databind.cfg.CoercionInputShape;
+import com.fasterxml.jackson.databind.type.LogicalType;
 import com.openai.client.OpenAIClient;
 import com.openai.client.okhttp.OpenAIOkHttpClient;
 import io.swagger.v3.oas.models.OpenAPI;
@@ -12,10 +15,17 @@ import org.example.service.*;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
+import org.springframework.boot.autoconfigure.jackson.Jackson2ObjectMapperBuilderCustomizer;
 import java.time.Duration;
 
 @Configuration
 public class ServiceConfiguration {
+    @Bean Jackson2ObjectMapperBuilderCustomizer strictStringInputs() {
+        return builder -> builder.postConfigurer(mapper -> mapper.coercionConfigFor(LogicalType.Textual)
+                .setCoercion(CoercionInputShape.Integer, CoercionAction.Fail)
+                .setCoercion(CoercionInputShape.Float, CoercionAction.Fail)
+                .setCoercion(CoercionInputShape.Boolean, CoercionAction.Fail));
+    }
     @Bean KnowledgeBase knowledgeBase(SupportProperties properties, ObjectMapper mapper) {
         return new KnowledgeBase(KnowledgeBaseLoader.load(properties.kbPath(), mapper));
     }
